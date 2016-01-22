@@ -2,9 +2,10 @@
 
 ### Quick start
 
-* extract the image and flash it onto a microSD card (replace sdx with the name of your SD card device file)
+Extract the image and flash it onto a microSD card (replace sdx with the name of your SD card device file):
 
-    linux# xzcat pine64_linux-xxxxx.img.xz | dd of=/dev/sdx bs=1M && sync
+    # xzcat pine64_linux-xxxxx.img.xz | dd of=/dev/sdx bs=1M
+    # sync
 
 **WARNING**:
 This will overwrite the partition table and a good part of the card
