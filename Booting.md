@@ -2,8 +2,8 @@
 
 As with most Allwinner SoCs, out of reset the first ARM core starts executing
 code from the SoC internal mask ROM, mapped at address 0. This code checks for
-the FEL condition and most probably engages the appropriate protocol over USB
-(TODO: untested, usable on the Pine64?).
+the FEL condition, which is a missing SD card on the Pine64. In this case
+it waits for requests via the USB-OTG port (the upper USB socket).
 If the FEL condition is not met, the ROM code will load 32KB from sector 16 of
 the SD card into a location in SRAM (TODO: where?) and will execute that code.
 
