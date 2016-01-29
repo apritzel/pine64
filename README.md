@@ -47,7 +47,7 @@ The default boot sequence will load a kernel and an initrd from the "shell" part
 
 The crippled U-Boot can only load kernels which are wrapped as an "Android boot image". So to make your kernel usable, use the [mkbootimg tool](https://android.googlesource.com/platform/system/core/+/master/mkbootimg/):
 
-    linux# ./mkbootimg --kernel yourkernel --base 0x40000000 --kernel_offset 0x01800000 --board Pine64 --pagesize 2048 -o output.img
+    linux# ./mkbootimg --kernel yourkernel --base 0x40000000 --kernel_offset 0x01080000 --board Pine64 --pagesize 2048 -o output.img
     linux# dd if=output.img bs=1M of=/dev/sdx9
 
 Then tell U-Boot to use a different kernel partition:
