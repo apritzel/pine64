@@ -2,15 +2,17 @@ SH=/bin/sh
 CFLAGS=-Wall -g -O
 LDFLAGS=-g
 
-all: gen_part
+all: gen_part boot0img
 
 gen_part: gen_part.o
 
-.PHONY: clean
+boot0img: boot0img.o
+
+.PHONY: clean distclean
 
 clean:
 	rm -f *.o
 
-clobber: clean
-	rm -f gen_part
+distclean: clean
+	rm -f gen_part boot0img
 
