@@ -69,7 +69,7 @@ static ssize_t read_file(const char *filename, char **buffer_addr)
 	char* buffer;
 	size_t len, ret;
 
-	fp = fopen(filename, "r");
+	fp = fopen(filename, "rb");
 	if (fp == NULL)
 		return -errno;
 
@@ -452,7 +452,7 @@ int main(int argc, char **argv)
 	header[HEADER_CHECKSUM] = htole32(checksum);
 
 	if (out_fname)
-		outf = fopen(out_fname, "w");
+		outf = fopen(out_fname, "wb");
 	else
 		outf = stdout;
 	if (outf == NULL) {
