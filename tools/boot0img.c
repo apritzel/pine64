@@ -120,31 +120,34 @@ static int pseek(FILE *stream, long offset)
 
 static void usage(const char *progname, FILE *stream)
 {
-	fprintf(stream, "boot0img: assemble an Allwinner boot image for boot0\n");
-	fprintf(stream, "usage: %s [-h] [-e] [-o output.img] [-b boot0.img]\n",
-			 progname);
-	fprintf(stream, "         [-u u-boot-dtb.bin] -d bl31.bin -s scp.bin [-a addr]\n");
+	fprintf(stream, "boot0img: assemble an Allwinner boot image for boot0\n"
+		"usage: %s [-h] [-e] [-o output.img] [-b boot0.img]\n"
+		"       [-u u-boot-dtb.bin] -d bl31.bin -s scp.bin [-a addr]\n",
+			progname);
 	fprintf(stream, "       %s [-c file]\n", progname);
-	fprintf(stream, "  -h|--help: this help output\n");
-	fprintf(stream, "  -o|--output: output file name, stdout if omitted\n");
-	fprintf(stream, "  -b|--boot0: boot0 image to embed into the image\n");
-	fprintf(stream, "  -c|--checksum: calculate checksum of file\n");
-	fprintf(stream, "  -u|--uboot: U-Boot image file (without SPL)\n");
-	fprintf(stream, "  -s|--sram: image file to write into SRAM\n");
-	fprintf(stream, "  -d|--dram: image file to write into DRAM\n");
-	fprintf(stream, "  -a|--arisc_entry: reset vector address for arisc\n");
-	fprintf(stream, "  -e|--embedded_header: use header from U-Boot binary\n");
-	fprintf(stream, "\nGiving a boot0 image name will create an image which"
-			" can be written directly\nto an SD card. Otherwise"
-			" just the blob with the secondary firmware parts will"
-			"\nbe assembled.\n");
-	fprintf(stream, "\nInstead of an actual binary for the DRAM, you can write ARM or AArch64\n");
-	fprintf(stream, "trampoline code into that location. It will jump to the specified address.\n");
+	fprintf(stream, "\t-h|--help: this help output\n"
+		"\t-q|--quiet: be less verbose\n"
+		"\t-o|--output: output file name, stdout if omitted\n"
+		"\t-b|--boot0: boot0 image to embed into the image\n"
+		"\t-c|--checksum: calculate checksum of file\n"
+		"\t-u|--uboot: U-Boot image file (without SPL)\n"
+		"\t-s|--sram: image file to write into SRAM\n"
+		"\t-d|--dram: image file to write into DRAM\n"
+		"\t-a|--arisc_entry: reset vector address for arisc\n"
+		"\t-e|--embedded_header: use header from U-Boot binary\n\n");
+	fprintf(stream, "Giving a boot0 image name will create an image which "
+		"can be written directly\nto an SD card. Otherwise just the "
+		"blob with the secondary firmware parts will\nbe assembled.\n");
+	fprintf(stream, "\nInstead of an actual binary for the DRAM, you can "
+		"write ARM or AArch64\ntrampoline code into that location. It "
+		"will jump to the specified address.\n");
 	fprintf(stream, "\t--dram trampoline64:<addr>\n");
 	fprintf(stream, "\t--dram trampoline32:<addr>\n");
-	fprintf(stream, "\nSpecifying an arisc entry address will populate the arisc reset exception\n");
-	fprintf(stream, "vector with an OpenRISC instruction to jump to that specified address.\n");
-	fprintf(stream, "The given SRAM binary will thus be written behind the exception vector area.\n");
+	fprintf(stream, "\nSpecifying an arisc entry address will populate the "
+		"arisc reset exception vector\nwith an OpenRISC instruction to "
+		"jump to that specified address.\n");
+	fprintf(stream, "The given SRAM binary will thus be written behind the "
+		"exception vector area.\n");
 	fprintf(stream, "\t--arisc_entry 0x44008\n");
 }
 
@@ -192,7 +195,7 @@ static int checksum_file(const char *filename, bool verbose)
 			old_checksum, old_checksum == checksum ? "" : "NOT ");
 	}
 
-	return !(old_checksum == checksum);
+	return old_checksum != checksum;
 }
 
 static int copy_boot0(FILE *outf, const char *boot0fname)
