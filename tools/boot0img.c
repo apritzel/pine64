@@ -244,6 +244,12 @@ int main(int argc, char **argv)
 	bool quiet = false;
 	bool embedded_header = false;
 
+	if (argc <= 1) {
+		/* with no arguments at all: default to showing usage help */
+		usage(argv[0], stdout);
+		return 0;
+	}
+
 	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:s:d:a:",
 				 lopts, NULL)) != -1) {
 		switch(ch) {
@@ -288,13 +294,13 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
+	if (chksum_fname)
+		return checksum_file(chksum_fname, !quiet);
+
 	if (!sram_fname) {
 		fprintf(stderr, "boot0 requires an \"SCP\" binary.\n");
 		return 2;
 	}
-
-	if (chksum_fname)
-		return checksum_file(chksum_fname, !quiet);
 
 	if (uboot_fname) {
 		if (!quiet)
