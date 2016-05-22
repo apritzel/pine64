@@ -91,6 +91,33 @@ static ssize_t read_file(const char *filename, char **buffer_addr)
 	return len;
 }
 
+#define ZBUFSIZE 1024
+
+static int pseek(FILE *stream, long offset)
+{
+	int ret;
+	static const char zeroes[ZBUFSIZE] = {};
+
+	ret = fseek(stream, offset, SEEK_CUR);
+	if (!ret)
+		return ret;
+
+	if (ret < 0 && errno != ESPIPE)
+		return -errno;
+
+	while (offset) {
+		int chunk = (offset > ZBUFSIZE ? ZBUFSIZE : offset);
+
+		ret = fwrite(zeroes, 1, chunk, stream);
+		if (!ret)
+			return -errno;
+
+		offset -= ret;
+	}
+
+	return 0;
+}
+
 static void usage(const char *progname, FILE *stream)
 {
 	fprintf(stream, "boot0img: assemble an Allwinner boot image for boot0\n");
@@ -170,7 +197,7 @@ static int checksum_file(const char *filename, bool verbose)
 
 static int copy_boot0(FILE *outf, const char *boot0fname)
 {
-	char *buffer, *zerobuf = NULL;
+	char *buffer;
 	ssize_t size;
 	int ret;
 
@@ -183,33 +210,13 @@ static int copy_boot0(FILE *outf, const char *boot0fname)
 		return -1;
 	}
 
-	ret = fseek(outf, BOOT0_OFFSET, SEEK_CUR);
-	if (ret < 0) {
-		fprintf(stderr, "not seekable file: %d\n", errno);
-		if (errno != ESPIPE) {
-			free(buffer);
-			return -errno;
-		}
-		zerobuf = calloc(1, BOOT0_OFFSET);
-		if (!zerobuf) {
-			free(buffer);
-			return -ENOMEM;
-		}
-		fwrite(zerobuf, 1, BOOT0_OFFSET, outf);
-	}
+	ret = pseek(outf, BOOT0_OFFSET);
+	if (ret < 0)
+		return -errno;
 
 	fwrite(buffer, size, 1, outf);
 
-	if (zerobuf) {
-		int i;
-
-		for (i = 0; i < (UBOOT_OFFSET_KB - BOOT0_END_KB) / 8; i++)
-			fwrite(zerobuf, 1, BOOT0_OFFSET, outf);
-
-		free(zerobuf);
-	} else {
-		fseek(outf, (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024, SEEK_CUR);
-	}
+	pseek(outf, (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024);
 
 	free(buffer);
 	return 0;
