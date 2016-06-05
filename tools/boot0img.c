@@ -133,7 +133,8 @@ static void chs_encode(int lba, uint8_t *chs)
 	chs[2] = c & 0xff;
 }
 
-static void create_part_table(FILE *stream, off_t fat_size, bool efi)
+static void create_part_table(FILE *stream, off_t fat_size, bool efi,
+			      bool patch)
 {
 	union {
 		uint8_t b[16];
@@ -147,20 +148,24 @@ static void create_part_table(FILE *stream, off_t fat_size, bool efi)
 	fwrite(zero.b, 14, 1, stream);
 
 	fatp.b[0] = 0x80;
-	fatp.l[2] = htole32(20 * 2048);
+	fatp.l[2] = htole32((patch ? 1 : 20) * 2048);
 	fatp.l[3] = htole32(fat_size);
 	chs_encode(fatp.l[2], &fatp.b[1]);
 	fatp.b[4] = efi ? 0xef : 0x06;
 	chs_encode(fatp.l[2] + fatp.l[3] - 1, &fatp.b[5]);
 	fwrite(fatp.b, 16, 1, stream);
 
-	fwp.b[0] = 0;
-	fwp.l[2] = htole32(1);
-	fwp.l[3] = htole32(20 * 2048 - 1);
-	chs_encode(fwp.l[2], &fwp.b[1]);
-	fwp.b[4] = 0xda;
-	chs_encode(fwp.l[2] + fwp.l[3] - 1, &fwp.b[5]);
-	fwrite(fwp.b, 16, 1, stream);
+	if (patch) {
+		fwrite(zero.b, 16, 1, stream);
+	} else {
+		fwp.b[0] = 0;
+		fwp.l[2] = htole32(1);
+		fwp.l[3] = htole32(20 * 2048 - 1);
+		chs_encode(fwp.l[2], &fwp.b[1]);
+		fwp.b[4] = 0xda;
+		chs_encode(fwp.l[2] + fwp.l[3] - 1, &fwp.b[5]);
+		fwrite(fwp.b, 16, 1, stream);
+	}
 
 	fwrite(zero.b, 16, 1, stream);
 	fwrite(zero.b, 16, 1, stream);
@@ -168,6 +173,54 @@ static void create_part_table(FILE *stream, off_t fat_size, bool efi)
 	zero.b[0] = 0x55;
 	zero.b[1] = 0xaa;
 	fwrite(zero.b, 2, 1, stream);
+}
+
+/*
+ * Scan the boot0 binary for a Thumb2 instruction which loads a wide
+ * immediate into a register (MOVW <Rd>, #<imm16>), which is encoded as:
+ * "1111.0i10.0100.imm4|0imm3.Rd.imm8", where the imm16 is constructed as:
+ * "imm4:i:imm3:imm8". Match for an instruction which loads the "orig" value
+ * into any register and replace it with a load with the "new" value.
+ * Returns the number of patched instructions.
+ */
+static int patch_boot0(uint16_t *boot0, uint16_t orig, uint16_t new)
+{
+	int i;
+	uint16_t first = 0, imm;
+	int patched = 0;
+
+	for (i = 0; i < 16384; i++) {
+		if ((boot0[i] & 0xfbf0) == 0xf240) {
+			first = boot0[i];
+			continue;
+		}
+		if (!first)
+			continue;
+		if (boot0[i] & 0x8000) {
+			first = 0;
+			continue;
+		}
+		imm = (first & 0xf) << 12;
+		imm |= (first & 0x0400) << 1;
+		imm |= (boot0[i] & 0x7000) >> 4;
+		imm |= boot0[i] & 0x00ff;
+
+		if (imm == orig) {
+			first &= 0xfbf0;
+			first |= (new & 0xf000) >> 12;
+			first |= (new & 0x0800) >> 1;
+			boot0[i - 1] = first;
+			boot0[i] &= 0x8f00;
+			boot0[i] |= (new & 0x0700) << 4;
+			boot0[i] |= new & 0x00ff;
+
+			patched++;
+		}
+
+		first = 0;
+	}
+
+	return patched;
 }
 
 static void usage(const char *progname, FILE *stream)
@@ -181,6 +234,7 @@ static void usage(const char *progname, FILE *stream)
 		"\t-q|--quiet: be less verbose\n"
 		"\t-o|--output: output file name, stdout if omitted\n"
 		"\t-b|--boot0: boot0 image to embed into the image\n"
+		"\t-B|--boot0-patch: patch boot0 image and embed into image\n"
 		"\t-c|--checksum: calculate checksum of file\n"
 		"\t-u|--uboot: U-Boot image file (without SPL)\n"
 		"\t-s|--sram: image file to write into SRAM\n"
@@ -252,31 +306,77 @@ static int checksum_file(const char *filename, bool verbose)
 	return old_checksum != checksum;
 }
 
-static int copy_boot0(FILE *outf, const char *boot0fname)
+static int copy_boot0(FILE *outf, const char *boot0fname, bool patch)
 {
 	char *buffer;
 	ssize_t size;
 	int ret;
+	int nr_patches;
+	uint32_t checksum = 0;
 
-	size = read_file(boot0fname, &buffer);
-	if (size < 0)
-		return size;
+	while (true) {			/* loop to potentially undo patching */
+		size = read_file(boot0fname, &buffer);
+		if (size < 0)
+			return size;
 
-	if (size > BOOT0_SIZE) {
-		fprintf(stderr, "boot0 is bigger than 32K (%zd Bytes)\n", size);
-		return -1;
+		if (size > BOOT0_SIZE) {
+			fprintf(stderr,
+				"boot0 is bigger than 32K (%zd Bytes)\n", size);
+			return -1;
+		}
+
+		if (patch) {
+			nr_patches = patch_boot0((void *)buffer,
+						 BOOT0_END_KB * 2,
+						 BOOT0_END_KB * 2);
+			if (nr_patches == 2)		/* already patched */
+				break;
+
+			nr_patches = patch_boot0((void *)buffer,
+						 UBOOT_OFFSET_KB * 2,
+						 BOOT0_END_KB * 2);
+			if (nr_patches != 2) {		/* something's wrong */
+				patch = false;
+				continue;		/* reload file */
+			}
+			checksum = 1;
+		} else {
+			nr_patches = patch_boot0((void *)buffer,
+						 UBOOT_OFFSET_KB * 2,
+						 UBOOT_OFFSET_KB * 2);
+			if (nr_patches == 2)		/* all fine */
+				break;
+
+			nr_patches = patch_boot0((void *)buffer,
+						 BOOT0_END_KB * 2,
+						 BOOT0_END_KB * 2);
+			if (nr_patches != 2)		/* unknown boot0 */
+				break;			/* proceed unaltered */
+
+			/* patched boot0, revert to old U-Boot position */
+			nr_patches = patch_boot0((void *)buffer,
+						 BOOT0_END_KB * 2,
+						 UBOOT_OFFSET_KB * 2);
+			checksum = 1;
+			patch = false;
+		}
+		break;
+	}
+	if (checksum) {
+		checksum = calc_checksum(buffer, 12);
+		checksum += CHECKSUM_SEED;
+		checksum += calc_checksum(buffer + 16, size - 16);
+		((uint32_t *)buffer)[3] = htole32(checksum);
 	}
 
-	ret = pseek(outf, BOOT0_OFFSET);
+	ret = pseek(outf, BOOT0_OFFSET - 512);
 	if (ret < 0)
 		return -errno;
 
 	fwrite(buffer, size, 1, outf);
 
-	pseek(outf, (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024);
-
 	free(buffer);
-	return 0;
+	return (int)patch;
 }
 
 int main(int argc, char **argv)
@@ -289,6 +389,7 @@ int main(int argc, char **argv)
 		{ "checksum",	1, 0, 'c' },
 		{ "output",	1, 0, 'o' },
 		{ "boot0",	1, 0, 'b' },
+		{ "boot0-patch",	1, 0, 'B' },
 		{ "embedded_header",	0, 0, 'e' },
 		{ "arisc_entry",1, 0, 'a' },
 		{ "quiet",	0, 0, 'q' },
@@ -307,7 +408,8 @@ int main(int argc, char **argv)
 	ssize_t uboot_size, sram_size, dram_size;
 	FILE *outf;
 	int ch;
-	bool quiet = false, embedded_header = false, efi_part = false;
+	bool quiet = false, embedded_header = false, patched_boot0 = false;
+	bool efi_part = false;
 
 	if (argc <= 1) {
 		/* with no arguments at all: default to showing usage help */
@@ -315,7 +417,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:s:d:a:p:P:",
+	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:B:s:d:a:p:P:",
 				 lopts, NULL)) != -1) {
 		switch(ch) {
 		case '?':
@@ -327,6 +429,9 @@ int main(int argc, char **argv)
 		case 'o':
 			out_fname = optarg;
 			break;
+		case 'B':
+			patched_boot0 = true;
+			/* fall through */
 		case 'b':
 			boot0_fname = optarg;
 			break;
@@ -534,17 +639,25 @@ int main(int argc, char **argv)
 	}
 
 	if (part_size != -1)
-		create_part_table(outf, part_size * 1024 * 1024, efi_part);
+		create_part_table(outf, part_size * 1024 * 1024, efi_part,
+				  patched_boot0);
 
 	if (boot0_fname) {
 		int ret;
 
 		if (part_size == -1)
 			pseek(outf, 512);
-		ret = copy_boot0(outf, boot0_fname);
+		ret = copy_boot0(outf, boot0_fname, patched_boot0);
 		if (ret < 0)
 			perror(boot0_fname);
-		offset += UBOOT_OFFSET_KB * 1024;
+		else
+			patched_boot0 = ret;
+		offset += BOOT0_SIZE;
+
+		if (!patched_boot0) {
+			pseek(outf, (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024);
+			offset += (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024;
+		}
 	} else {
 		if (part_size != -1)
 			pseek(outf, UBOOT_OFFSET_KB * 1024 - 512);
