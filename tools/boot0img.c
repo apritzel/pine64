@@ -118,6 +118,58 @@ static int pseek(FILE *stream, long offset)
 	return 0;
 }
 
+#define SEC_PER_TRACK	63
+#define TRACKS_PER_CYL	255
+static void chs_encode(int lba, uint8_t *chs)
+{
+	int c, h, s;
+
+	s = (lba % SEC_PER_TRACK) + 1;
+	h = ((lba / SEC_PER_TRACK) % TRACKS_PER_CYL) & 0xff;
+	c = lba / (SEC_PER_TRACK * TRACKS_PER_CYL) & 0x3ff;
+
+	chs[0] = h;
+	chs[1] = s | (c >> 8);
+	chs[2] = c & 0xff;
+}
+
+static void create_part_table(FILE *stream, off_t fat_size, bool efi)
+{
+	union {
+		uint8_t b[16];
+		uint32_t l[16];
+	} fatp, fwp, zero = {};
+	int i;
+
+	fat_size /= 512;
+	for (i = 0; i < 27; i++)
+		fwrite(zero.b, 16, 1, stream);
+	fwrite(zero.b, 14, 1, stream);
+
+	fatp.b[0] = 0x80;
+	fatp.l[2] = htole32(20 * 2048);
+	fatp.l[3] = htole32(fat_size);
+	chs_encode(fatp.l[2], &fatp.b[1]);
+	fatp.b[4] = efi ? 0xef : 0x06;
+	chs_encode(fatp.l[2] + fatp.l[3] - 1, &fatp.b[5]);
+	fwrite(fatp.b, 16, 1, stream);
+
+	fwp.b[0] = 0;
+	fwp.l[2] = htole32(1);
+	fwp.l[3] = htole32(20 * 2048 - 1);
+	chs_encode(fwp.l[2], &fwp.b[1]);
+	fwp.b[4] = 0xda;
+	chs_encode(fwp.l[2] + fwp.l[3] - 1, &fwp.b[5]);
+	fwrite(fwp.b, 16, 1, stream);
+
+	fwrite(zero.b, 16, 1, stream);
+	fwrite(zero.b, 16, 1, stream);
+
+	zero.b[0] = 0x55;
+	zero.b[1] = 0xaa;
+	fwrite(zero.b, 2, 1, stream);
+}
+
 static void usage(const char *progname, FILE *stream)
 {
 	fprintf(stream, "boot0img: assemble an Allwinner boot image for boot0\n"
@@ -134,7 +186,9 @@ static void usage(const char *progname, FILE *stream)
 		"\t-s|--sram: image file to write into SRAM\n"
 		"\t-d|--dram: image file to write into DRAM\n"
 		"\t-a|--arisc_entry: reset vector address for arisc\n"
-		"\t-e|--embedded_header: use header from U-Boot binary\n\n");
+		"\t-e|--embedded_header: use header from U-Boot binary\n"
+		"\t-p|--partition: add a partition table with an <n> MB FAT partition\n"
+		"\t-P|--EFI-partition: as above, but as an EFI partition\n\n");
 	fprintf(stream, "Giving a boot0 image name will create an image which "
 		"can be written directly\nto an SD card. Otherwise just the "
 		"blob with the secondary firmware parts will\nbe assembled.\n");
@@ -237,12 +291,14 @@ int main(int argc, char **argv)
 		{ "boot0",	1, 0, 'b' },
 		{ "embedded_header",	0, 0, 'e' },
 		{ "arisc_entry",1, 0, 'a' },
-		{ "quiet",	0, 0, '0' },
+		{ "quiet",	0, 0, 'q' },
+		{ "partition",	1, 0, 'p' },
+		{ "efi-partition",	1, 0, 'P' },
 		{ NULL, 0, 0, 0 },
 	};
 	uint32_t *header;
 	uint32_t checksum = 0;
-	off_t offset;
+	off_t offset, part_size = -1;
 	const char *uboot_fname = NULL, *boot0_fname = NULL, *dram_fname = NULL;
 	const char *sram_fname = NULL, *chksum_fname = NULL, *out_fname = NULL;
 	const char *arisc_addr = NULL;
@@ -251,8 +307,7 @@ int main(int argc, char **argv)
 	ssize_t uboot_size, sram_size, dram_size;
 	FILE *outf;
 	int ch;
-	bool quiet = false;
-	bool embedded_header = false;
+	bool quiet = false, embedded_header = false, efi_part = false;
 
 	if (argc <= 1) {
 		/* with no arguments at all: default to showing usage help */
@@ -260,7 +315,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:s:d:a:",
+	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:s:d:a:p:P:",
 				 lopts, NULL)) != -1) {
 		switch(ch) {
 		case '?':
@@ -296,11 +351,18 @@ int main(int argc, char **argv)
 		case 'a':
 			arisc_addr = optarg;
 			break;
+		case 'P':
+			efi_part = true;
+			/* fall through */
+		case 'p':
+			part_size = atoi(optarg);
+			break;
 		}
 	}
 
 	if (embedded_header && !uboot_fname) {
 		fprintf(stderr, "must provide U-Boot file (-u) with embedded header (-e)\n");
+		usage(argv[0], stderr);
 		return 2;
 	}
 
@@ -309,6 +371,7 @@ int main(int argc, char **argv)
 
 	if (!sram_fname) {
 		fprintf(stderr, "boot0 requires an \"SCP\" binary.\n");
+		usage(argv[0], stderr);
 		return 2;
 	}
 
@@ -470,9 +533,21 @@ int main(int argc, char **argv)
 		return 5;
 	}
 
+	if (part_size != -1)
+		create_part_table(outf, part_size * 1024 * 1024, efi_part);
+
 	if (boot0_fname) {
-		copy_boot0(outf, boot0_fname);
+		int ret;
+
+		if (part_size == -1)
+			pseek(outf, 512);
+		ret = copy_boot0(outf, boot0_fname);
+		if (ret < 0)
+			perror(boot0_fname);
 		offset += UBOOT_OFFSET_KB * 1024;
+	} else {
+		if (part_size != -1)
+			pseek(outf, UBOOT_OFFSET_KB * 1024 - 512);
 	}
 
 	if (!embedded_header)
