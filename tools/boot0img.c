@@ -476,8 +476,10 @@ int main(int argc, char **argv)
 
 	fclose(outf);
 
-	if (out_fname)
-		truncate(out_fname, offset);
+	if (out_fname) {
+		if (truncate(out_fname, offset))
+			perror("error truncating output file");
+	}
 
 	free(uboot_buf);
 	free(sram_buf);
