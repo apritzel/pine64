@@ -233,6 +233,7 @@ static void usage(const char *progname, FILE *stream)
 	fprintf(stream, "\t-h|--help: this help output\n"
 		"\t-q|--quiet: be less verbose\n"
 		"\t-o|--output: output file name, stdout if omitted\n"
+		"\t-D|--device: output device file, -o gets ignored\n"
 		"\t-b|--boot0: boot0 image to embed into the image\n"
 		"\t-B|--boot0-patch: patch boot0 image and embed into image\n"
 		"\t-c|--checksum: calculate checksum of file\n"
@@ -310,7 +311,6 @@ static int copy_boot0(FILE *outf, const char *boot0fname, bool patch)
 {
 	char *buffer;
 	ssize_t size;
-	int ret;
 	int nr_patches;
 	uint32_t checksum = 0;
 
@@ -369,10 +369,6 @@ static int copy_boot0(FILE *outf, const char *boot0fname, bool patch)
 		((uint32_t *)buffer)[3] = htole32(checksum);
 	}
 
-	ret = pseek(outf, BOOT0_OFFSET - 512);
-	if (ret < 0)
-		return -errno;
-
 	fwrite(buffer, size, 1, outf);
 
 	free(buffer);
@@ -395,6 +391,7 @@ int main(int argc, char **argv)
 		{ "quiet",	0, 0, 'q' },
 		{ "partition",	1, 0, 'p' },
 		{ "efi-partition",	1, 0, 'P' },
+		{ "device",	1, 0, 'D' },
 		{ NULL, 0, 0, 0 },
 	};
 	uint32_t *header;
@@ -402,7 +399,7 @@ int main(int argc, char **argv)
 	off_t offset, part_size = -1;
 	const char *uboot_fname = NULL, *boot0_fname = NULL, *dram_fname = NULL;
 	const char *sram_fname = NULL, *chksum_fname = NULL, *out_fname = NULL;
-	const char *arisc_addr = NULL;
+	const char *arisc_addr = NULL, *device_fname = NULL;
 	char *uboot_buf = NULL;
 	uint32_t *dram_buf = NULL, *sram_buf = NULL;
 	ssize_t uboot_size, sram_size, dram_size;
@@ -417,7 +414,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:B:s:d:a:p:P:",
+	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:B:s:d:a:p:P:D:",
 				 lopts, NULL)) != -1) {
 		switch(ch) {
 		case '?':
@@ -461,6 +458,9 @@ int main(int argc, char **argv)
 			/* fall through */
 		case 'p':
 			part_size = atoi(optarg);
+			break;
+		case 'D':
+			device_fname = optarg;
 			break;
 		}
 	}
@@ -629,24 +629,40 @@ int main(int argc, char **argv)
 	checksum += calc_checksum(header, HEADER_SIZE);
 	header[HEADER_CHECKSUM] = htole32(checksum);
 
-	if (out_fname)
-		outf = fopen(out_fname, "wb");
-	else
-		outf = stdout;
+	if (device_fname) {
+		outf = fopen(device_fname, "r+b");
+		if (!outf) {
+			perror(device_fname);
+			return 2;
+		}
+		out_fname = NULL;
+	} else {
+		if (out_fname)
+			outf = fopen(out_fname, "wb");
+		else
+			outf = stdout;
+	}
+
 	if (outf == NULL) {
 		perror(out_fname);
 		return 5;
 	}
 
-	if (part_size != -1)
+	if (part_size != -1) {
 		create_part_table(outf, part_size * 1024 * 1024, efi_part,
 				  patched_boot0);
+		offset += 512;
+	} else if (device_fname)
+		pseek(outf, 512);
 
 	if (boot0_fname) {
 		int ret;
 
-		if (part_size == -1)
-			pseek(outf, 512);
+		if (device_fname || part_size != -1) {
+			pseek(outf, BOOT0_OFFSET - 512);
+			offset += BOOT0_OFFSET - 512;
+		}
+
 		ret = copy_boot0(outf, boot0_fname, patched_boot0);
 		if (ret < 0)
 			perror(boot0_fname);
@@ -659,8 +675,10 @@ int main(int argc, char **argv)
 			offset += (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024;
 		}
 	} else {
-		if (part_size != -1)
+		if (device_fname || part_size != -1) {
 			pseek(outf, UBOOT_OFFSET_KB * 1024 - 512);
+			offset += UBOOT_OFFSET_KB * 1024 - 512;
+		}
 	}
 
 	if (!embedded_header)
