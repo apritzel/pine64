@@ -88,6 +88,7 @@ static ssize_t read_file(const char *filename, char **buffer_addr)
 
 	*buffer_addr = realloc(buffer, len);
 
+	fclose(fp);
 	return len;
 }
 
