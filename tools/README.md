@@ -38,24 +38,31 @@ different firmware layout.
 ### Options
 ```
 boot0img: assemble an Allwinner boot image for boot0
-usage:	./boot0img [-h] [-e] [-o output.img] [-b boot0.img]
-		   [-u u-boot-dtb.bin] -d bl31.bin -s scp.bin [-a addr]
-	./boot0img [-c file]
-
+usage:  ./boot0img [-h] [-e] [-o output.img|-D /dev/sdx] [-b|-B boot0.img]
+                   [-u u-boot-dtb.bin] -d bl31.bin -s scp.bin [-a addr]
+                   [-p|-P size]
+        ./boot0img [-c file]
 	-h|--help: this help output
+	-q|--quiet: be less verbose
 	-o|--output: output file name, stdout if omitted
+	-D|--device: output device file, -o gets ignored
 	-b|--boot0: boot0 image to embed into the image
+	-B|--boot0-patch: patch boot0 image and embed into image
 	-c|--checksum: calculate checksum of file
 	-u|--uboot: U-Boot image file (without SPL)
 	-s|--sram: image file to write into SRAM
 	-d|--dram: image file to write into DRAM
-	-a|--arisc\_entry: reset vector address for arisc
-	-e|--embedded\_header: use header from U-Boot binary
+	-a|--arisc_entry: reset vector address for arisc
+	-e|--embedded_header: use header from U-Boot binary
+	-p|--partition: add a partition table with an <n> MB FAT partition
+	-P|--EFI-partition: as above, but as an EFI partition
 ```
 
 If you pass a boot0 image filename to the tool ```(-b|--boot0)```, it will
 create an image which can be written directly to an SD card. Otherwise just
 the blob with the secondary firmware parts will be assembled.
+Passing  ```-B``` instead will patch boot0 to load the rest of the firmware
+bits from below the first MB of the uSD card.
 
 Instead of an actual binary for the DRAM, you can write ARM or AArch64
 trampoline code into that location. It will jump to the specified address.
@@ -80,10 +87,11 @@ To assemble a traditional Allwinner-based firmware image, use:
 ```
 
 To assemble an image with a 64-bit U-Boot, an ATF running in SRAM and no arisc
-code at all, use:
+code at all, also have a pristine partition table with a 100 MB boot partition,
+use:
 ```
-./boot0img -o firmware.img -b boot0.bin -u u-boot-dtb.img -e -s bl31.bin \
--a 0x44008 -d trampoline64:0x44000
+./boot0img -o firmware.img -B boot0.bin -u u-boot-dtb.img -e -s bl31.bin \
+           -a 0x44008 -d trampoline64:0x44000 -p 100
 ```
 This will load the U-Boot binary to 0x4a000000 as usual, but puts the ATF binary
 into the SRAM A2 location (where the arisc binary normally lives).
