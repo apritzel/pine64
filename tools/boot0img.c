@@ -93,11 +93,27 @@ static ssize_t read_file(const char *filename, char **buffer_addr)
 }
 
 #define ZBUFSIZE 1024
+static int fill_zeroes(FILE *stream, off_t size)
+{
+	static const char zeroes[ZBUFSIZE] = {};
+	int chunk, ret;
+
+	while (size) {
+		chunk = (size > ZBUFSIZE ? ZBUFSIZE : size);
+
+		ret = fwrite(zeroes, 1, chunk, stream);
+		if (!ret)
+			return -errno;
+
+		size -= ret;
+	}
+
+	return 0;
+}
 
 static int pseek(FILE *stream, long offset)
 {
 	int ret;
-	static const char zeroes[ZBUFSIZE] = {};
 
 	ret = fseek(stream, offset, SEEK_CUR);
 	if (!ret)
@@ -106,17 +122,7 @@ static int pseek(FILE *stream, long offset)
 	if (ret < 0 && errno != ESPIPE)
 		return -errno;
 
-	while (offset) {
-		int chunk = (offset > ZBUFSIZE ? ZBUFSIZE : offset);
-
-		ret = fwrite(zeroes, 1, chunk, stream);
-		if (!ret)
-			return -errno;
-
-		offset -= ret;
-	}
-
-	return 0;
+	return fill_zeroes(stream, offset);
 }
 
 #define SEC_PER_TRACK	63
@@ -627,6 +633,8 @@ int main(int argc, char **argv)
 
 	offset = ALIGN(offset, BOOT0_ALIGN);
 	header[HEADER_LENGTH] = htole32(offset);
+	offset -= le32toh(header[HEADER_PRIMSIZE]);
+
 	checksum += calc_checksum(header, HEADER_SIZE);
 	header[HEADER_CHECKSUM] = htole32(checksum);
 
@@ -649,37 +657,29 @@ int main(int argc, char **argv)
 		return 5;
 	}
 
-	if (part_size != -1) {
+	if (part_size != -1)
 		create_part_table(outf, part_size * 1024 * 1024, efi_part,
 				  patched_boot0);
-		offset += 512;
-	} else if (device_fname)
+	else if (device_fname)
 		pseek(outf, 512);
 
 	if (boot0_fname) {
 		int ret;
 
-		if (device_fname || part_size != -1) {
+		if (device_fname || part_size != -1)
 			pseek(outf, BOOT0_OFFSET - 512);
-			offset += BOOT0_OFFSET - 512;
-		}
 
 		ret = copy_boot0(outf, boot0_fname, patched_boot0);
 		if (ret < 0)
 			perror(boot0_fname);
 		else
 			patched_boot0 = ret;
-		offset += BOOT0_SIZE;
 
-		if (!patched_boot0) {
+		if (!patched_boot0)
 			pseek(outf, (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024);
-			offset += (UBOOT_OFFSET_KB - BOOT0_END_KB) * 1024;
-		}
 	} else {
-		if (device_fname || part_size != -1) {
+		if (device_fname || part_size != -1)
 			pseek(outf, UBOOT_OFFSET_KB * 1024 - 512);
-			offset += UBOOT_OFFSET_KB * 1024 - 512;
-		}
 	}
 
 	if (!embedded_header)
@@ -691,12 +691,19 @@ int main(int argc, char **argv)
 		fwrite(dram_buf, dram_size, 1, outf);
 	fwrite(sram_buf, sram_size, 1, outf);
 
-	fclose(outf);
+	if (device_fname) {
+		fill_zeroes(outf, offset);
+	} else {
+		long fpos;
 
-	if (out_fname) {
-		if (truncate(out_fname, offset))
+		pseek(outf, offset);
+
+		fpos = ftell(outf);
+		if (fpos >= 0 && ftruncate(fileno(outf), fpos))
 			perror("error truncating output file");
 	}
+
+	fclose(outf);
 
 	free(uboot_buf);
 	free(sram_buf);
