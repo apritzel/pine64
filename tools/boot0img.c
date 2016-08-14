@@ -531,7 +531,7 @@ int main(int argc, char **argv)
 
 	if (dram_fname) {
 		if (!quiet)
-			fprintf(stderr, "DRAM  : %s", dram_fname);
+			fprintf(stderr, "DRAM  : %s: ", dram_fname);
 
 		if (!strncmp(dram_fname, "trampoline64:", 13) ||
 		    !strncmp(dram_fname, "trampoline32:", 13)) {
