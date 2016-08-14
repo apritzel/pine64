@@ -33,6 +33,7 @@ enum header_offsets {				/* in words of 4 bytes */
 	HEADER_PRIMSIZE	= 6,
 	HEADER_LOADADDR = 11,
 	HEADER_SECS	= 0x500 / 4,
+	HEADER_DTOFFSET = 315,
 };
 
 #define MAGIC_SIZE	((HEADER_CHECKSUM - HEADER_MAGIC) * 4)
@@ -245,6 +246,7 @@ static void usage(const char *progname, FILE *stream)
 		"\t-B|--boot0-patch: patch boot0 image and embed into image\n"
 		"\t-c|--checksum: calculate checksum of file\n"
 		"\t-u|--uboot: U-Boot image file (without SPL)\n"
+		"\t-F|--fdt: Device Tree file (for legacy u-boot))\n"
 		"\t-s|--sram: image file to write into SRAM\n"
 		"\t-d|--dram: image file to write into DRAM\n"
 		"\t-a|--arisc_entry: reset vector address for arisc\n"
@@ -387,6 +389,7 @@ int main(int argc, char **argv)
 	static const struct option lopts[] = {
 		{ "help",	0, 0, 'h' },
 		{ "uboot",	1, 0, 'u' },
+		{ "fdt",	1, 0, 'F' },
 		{ "sram",	1, 0, 's' },
 		{ "dram",	1, 0, 'd' },
 		{ "checksum",	1, 0, 'c' },
@@ -406,10 +409,10 @@ int main(int argc, char **argv)
 	off_t offset, part_size = -1;
 	const char *uboot_fname = NULL, *boot0_fname = NULL, *dram_fname = NULL;
 	const char *sram_fname = NULL, *chksum_fname = NULL, *out_fname = NULL;
-	const char *arisc_addr = NULL, *device_fname = NULL;
-	char *uboot_buf = NULL;
+	const char *arisc_addr = NULL, *device_fname = NULL, *dtb_fname = NULL;
+	char *uboot_buf = NULL, *dtb_buf = NULL;
 	uint32_t *dram_buf = NULL, *sram_buf = NULL;
-	ssize_t uboot_size, sram_size, dram_size;
+	ssize_t uboot_size, sram_size, dram_size, dtb_size, old_uboot_size;
 	FILE *outf;
 	int ch;
 	bool quiet = false, embedded_header = false, patched_boot0 = false;
@@ -421,7 +424,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	while ((ch = getopt_long(argc, argv, "heqo:u:c:b:B:s:d:a:p:P:D:",
+	while ((ch = getopt_long(argc, argv, "heqo:u:F:c:b:B:s:d:a:p:P:D:",
 				 lopts, NULL)) != -1) {
 		switch(ch) {
 		case '?':
@@ -441,6 +444,9 @@ int main(int argc, char **argv)
 			break;
 		case 'u':
 			uboot_fname = optarg;
+			break;
+		case 'F':
+			dtb_fname = optarg;
 			break;
 		case 'd':
 			dram_fname = optarg;
@@ -502,6 +508,26 @@ int main(int argc, char **argv)
 
 		uboot_buf = realloc_zero(uboot_buf, &uboot_size,
 					 ALIGN(uboot_size, 512));
+
+		if (dtb_fname) {
+			if (!quiet)
+				fprintf(stderr, "FDT   : %s: ", dtb_fname);
+			dtb_size = read_file(dtb_fname, &dtb_buf);
+			if (dtb_size < 0) {
+				perror(quiet ? dtb_fname : "");
+				return 3;
+			}
+			if (!quiet)
+				fprintf(stderr, "%zd Bytes\n", dtb_size);
+
+			dtb_buf = realloc_zero(dtb_buf, &dtb_size,
+					 ALIGN(dtb_size, 1024));
+
+			old_uboot_size = uboot_size;
+			uboot_buf = realloc_zero(uboot_buf, &uboot_size,
+					 old_uboot_size + dtb_size);
+			memcpy(uboot_buf + old_uboot_size, dtb_buf, dtb_size);
+		}
 
 		/* Use the buffer within uboot_buf for holding the header */
 		if (embedded_header) {
@@ -631,6 +657,9 @@ int main(int argc, char **argv)
 	header[HEADER_LOADADDR] = htole32(UBOOT_LOAD_ADDR);
 	header[HEADER_PRIMSIZE] = htole32(offset);
 
+	if (dtb_fname)
+		header[HEADER_DTOFFSET] = htole32(old_uboot_size);
+
 	offset = ALIGN(offset, BOOT0_ALIGN);
 	header[HEADER_LENGTH] = htole32(offset);
 	offset -= le32toh(header[HEADER_PRIMSIZE]);
@@ -706,6 +735,7 @@ int main(int argc, char **argv)
 	fclose(outf);
 
 	free(uboot_buf);
+	free(dtb_buf);
 	free(sram_buf);
 	free(dram_buf);
 
