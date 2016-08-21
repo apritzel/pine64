@@ -277,7 +277,7 @@ static void *realloc_zero(void *ptr, ssize_t *sizeptr, ssize_t newsize)
 	ret = realloc(ptr, newsize);
 
 	if (newsize > *sizeptr)
-		memset((char*)ptr + *sizeptr, 0, newsize - *sizeptr);
+		memset((char*)ret + *sizeptr, 0, newsize - *sizeptr);
 
 	*sizeptr = newsize;
 
