@@ -12,6 +12,7 @@ convenience. You can always rebuild them, as described below.
 
 This directory here provides built versions of some firmware components,
 because:
+
 - You might run into issues when some binaries require certain toolchains.
 ATF for instance is known for some peculiarities.
 - You just can't be bothered with cloning and building just another piece
@@ -22,23 +23,28 @@ culprit by replacing some components with known good builds.
 
 ARM Trusted Firmware builds
 ---------------------------
-- `bl31.bin`: default debug build of the ARM Trusted Firmware binary. This is
-the branch based on the original Allwinner fork.
-- `bl31-nodebug.bin`: built as a release version, which does not output anything
-on the serial console, but is functionally identical to the above build. This
-version will leave you clueless about anything going wrong within the ATF
-component, but it is smaller than the debug build (20KB vs. 32KB) and might
-be required for situations where image size is of importance.
+- `bl31-a64-h5.bin`: default debug build of the ARM Trusted Firmware binary
+for boards with an Allwinner A64 or H5 SoC. This is from the official
+mainline ATF branch.
+- `bl31-h6.bin`: default debug build of the ARM Trusted Firmware binary
+for boards with an Allwinner H6 SoC. This is from the official mainline
+ATF branch.
 
-To rebuild those binaries, fetch the allwinner branch from the
-[ATF](https://github.com/apritzel/arm-trusted-firmware) repository:
+Files with a "-legacy" prefix are based on the outdated Allwinner based branch
+and are just provided for the sake of completeness.
+
+To rebuild those binaries, fetch the master branch from the official
+[ATF](https://github.com/ARM-software/arm-trusted-firmware) repository:
 
     $ export CROSS_COMPILE=aarch64-linux-
-    $ make PLAT=sun50iw1p1 DEBUG=1 bl31
+    $ make PLAT=sun50i_a64 DEBUG=1 bl31
 
-The resulting binary is `build/sun50iw1p1/debug/bl31.bin`. For the non-debug
-build, use `DEBUG=0` in the command line above and use the binary at
-`build/sun50iw1p1/release/bl31.bin`.
+The resulting binary is `build/sun50i_a64/debug/bl31.bin`. For a non-debug
+build (which is smaller and does not generate any output on the console), use
+`DEBUG=0` in the command line above and use the binary at
+`build/sun50i_a64/release/bl31.bin`.
+This build covers H5 SoCs as well. For the H6, simply use the "sun50i_h6" build
+target and copy the file from the respective build directory.
 
 FEL capable SPL builds
 ----------------------
