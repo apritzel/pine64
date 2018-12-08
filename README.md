@@ -59,10 +59,7 @@ build.
 like PSCI. It stays resident during the whole time and can be called from an OS
 like Linux to enable or disable secondary cores or request other services. It
 also takes care of low level CPU initialization and some errata handling.
-We use a version of ARM Trusted Firmware, based on the official 1.0 release
-from ARM and ported by Allwinner to support the A64. There are a lot of
-patches on top of this to fix some Allwinner accidents and bring it into a sane
-state again.
+Support for the A64 SoC is in the official mainline ATF repository.
 * An U-Boot bootloader. This provides an user interface and allows to load
 kernels and other data into the memory to eventually start the system. Since
 version 2016.07-rc1 the Pine64 board is supported by upstream U-Boot.
@@ -72,14 +69,14 @@ To rebuild the firmware image, you will need to:
 ##### Build ARM Trusted Firmware (ATF):
 Check out the latest version and compile it:
 
-    $ git clone https://github.com/apritzel/arm-trusted-firmware.git
+    $ git clone https://github.com/ARM-software/arm-trusted-firmware.git
     $ cd arm-trusted-firmware
     $ export CROSS_COMPILE=aarch64-linux-gnu-
-    $ make PLAT=sun50iw1p1 DEBUG=1 bl31
+    $ make PLAT=sun50i_a64 DEBUG=1 bl31
 
-The resulting binary is `build/sun50iw1p1/debug/bl31.bin`. Either copy this file
-to the root of your U-Boot source directory, or put the absolute file name into the BL31
-environment variable.
+The resulting binary is `build/sun50i_a64/debug/bl31.bin`. Either copy this file
+to the root of your U-Boot source directory, or put the absolute file name into
+the BL31 environment variable.
 
 ##### Build U-Boot:
 Check out the latest upstream HEAD and compile it:
@@ -90,12 +87,12 @@ Check out the latest upstream HEAD and compile it:
     $ make pine64_plus_defconfig
     $ make
 
-The resulting binaries are spl/sunxi-spl.bin and u-boot.itb, which contain
-the SPL, the ATF binary, DTBs and the actual U-Boot proper.
+The SPL part will end up in `spl/sunxi-spl.bin`, the rest of the firmware
+(including the ATF binary, DTBs and the actual U-Boot proper) will be in
+`u-boot.itb`.
 
-##### Assemble the parts:
-
-    $ cat spl/sunxi-spl.bin u-boot.itb > u-boot-sunxi-with-spl.bin
+`u-boot-sunxi-with-spl.bin` contains the two in one image file ready to be
+written to an SD card.
 
 ##### Write to an SD card:
 The resulting image can now be written to sector 16 of a micro SD card:
