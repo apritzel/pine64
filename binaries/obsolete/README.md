@@ -1,5 +1,5 @@
-Binaries
-========
+Obsolete binaries
+=================
 
 ---
 
@@ -14,26 +14,29 @@ This directory here provides built versions of some firmware components,
 because:
 
 - You might run into issues when some binaries require certain toolchains.
-TF-A for instance is known for some peculiarities.
+ATF for instance is known for some peculiarities.
 - You just can't be bothered with cloning and building just another piece
 of software.
 - You might want to troubleshoot a firmware build, and want to isolate the
 culprit by replacing some components with known good builds.
 - Some binaries are not fully mainlined (FEL capable SPL builds).
 
-Trusted Firmware-A builds
+ARM Trusted Firmware builds
 ---------------------------
-- `bl31-a64-h5.bin`: default debug build of the Trusted Firmware binary
-for boards with an Allwinner A64 or H5 SoC. This is v2.4 from the official
-mainline TF-A branch.
-- `bl31-h6.bin`: default debug build of the Trusted Firmware binary
-for boards with an Allwinner H6 SoC. This is v2.4 from the official mainline
-TF-A branch.
+- `bl31-a64-h5.bin`: default debug build of the ARM Trusted Firmware binary
+for boards with an Allwinner A64 or H5 SoC. This is from the official
+mainline ATF branch.
+- `bl31-h6.bin`: default debug build of the ARM Trusted Firmware binary
+for boards with an Allwinner H6 SoC. This is from the official mainline
+ATF branch.
+
+Files with a "-legacy" prefix are based on the outdated Allwinner based branch
+and are just provided for the sake of completeness.
 
 To rebuild those binaries, fetch the master branch from the official
-[TF-A](https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git) repository:
+[ATF](https://github.com/ARM-software/arm-trusted-firmware) repository:
 
-    $ export CROSS_COMPILE=aarch64-linux-gnu-
+    $ export CROSS_COMPILE=aarch64-linux-
     $ make PLAT=sun50i_a64 DEBUG=1 bl31
 
 The resulting binary is `build/sun50i_a64/debug/bl31.bin`. For a non-debug
