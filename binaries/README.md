@@ -45,15 +45,8 @@ target and copy the file from the respective build directory.
 
 FEL capable SPL builds
 ----------------------
-- `sunxi-a64-spl32-ddr3.bin`: 32bit build of a mainline based U-Boot SPL. Can be
-used for FEL booting. This version is for boards with the Allwinner A64 SoC
-and DDR3 DRAM (*not* LPDDR3), like the original Pine64 or the BananaPi M64.
-- `sunxi-a64-spl32-lpddr3.bin`: 32bit build of a mainline based U-Boot SPL.
-Can be used for FEL booting. This version is for boards with the Allwinner A64
-SoC and LPDDR3 DRAM, like the SoPine or the Pinebook.
-- `sunxi-h5-spl32-ddr3.bin`: 32bit build of a mainline based U-Boot SPL.
-Can be used for FEL booting. This version is for boards with the Allwinner H5
-SoC and DDR3 DRAM, like the OrangePi PC2 or the NanoPi Neo 2.
+- `sunxi-a64-h6-spl.bin`: 32bit build of a "unified" U-Boot SPL, which runs
+on both A64 and H5 SoCs and supports both DDR3 and LPDDR3 DRAM.
 - `sunxi-h6-spl32-lpddr3.bin`: 32bit build of a mainline based U-Boot SPL.
 Can be used for FEL booting. This version is for boards with the Allwinner H6
 SoC and LPDDR3 DRAM, like the OrangePi One Plus or the Pine H64.
@@ -62,7 +55,7 @@ To FEL boot a board, connect your host computer to the OTG port of a board.
 On the Pine64 you need a special USB-A <-> USB-A cable connected to the upper
 USB port. Then use the sunxi-fel program from the sunxi-tools [1] repository:
 
-    $ sunxi-fel -v spl sunxi-a64-spl32-ddr3.bin
+    $ sunxi-fel -v spl sunxi-a64-h5.bin
 
 After that you can load further firmware components into DRAM, if required:
 
