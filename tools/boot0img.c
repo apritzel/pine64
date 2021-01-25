@@ -593,9 +593,6 @@ int main(int argc, char **argv)
 	if (!quiet)
 		fprintf(stderr, "%zd Bytes\n", sram_size);
 
-	if (arisc_addr)
-		sram_size += 0x4000;
-
 	sram_buf = realloc_zero(sram_buf, &sram_size,
 				ALIGN(sram_size, 512));
 
@@ -610,6 +607,8 @@ int main(int argc, char **argv)
 		char *endptr;
 
 		address = strtoul(arisc_addr, &endptr, 0);
+		sram_buf = realloc_zero(sram_buf, &sram_size,
+					sram_size + 0x4000);
 		memmove(sram_buf + 0x1000, sram_buf, sram_size - 0x4000);
 		memset(sram_buf, 0, 0x4000);
 			/* OpenRISC: l.j <offset> */
